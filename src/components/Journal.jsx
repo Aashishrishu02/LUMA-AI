@@ -1,44 +1,80 @@
 import { useState, useEffect } from 'react'
 
-export default function Journal() {
+export default function Journal({ token }) {
   const [entries, setEntries] = useState([])
   const [title, setTitle] = useState('')
   const [body, setBody] = useState('')
   const [viewing, setViewing] = useState(null)
+  const [loading, setLoading] = useState(false)
   const [saved, setSaved] = useState(false)
   const [search, setSearch] = useState('')
 
   useEffect(() => {
-    const stored = localStorage.getItem('luma_journal')
-    if (stored) setEntries(JSON.parse(stored))
-  }, [])
+    fetchJournals()
+  }, [token])
+
+  const fetchJournals = async () => {
+    if (!token) return
+    try {
+      const res = await fetch('/api/journal', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+      if (res.ok) {
+        const data = await res.json()
+        setEntries(data)
+      }
+    } catch (err) {
+      console.error(err)
+    }
+  }
 
   const wordCount = body.trim().split(/\s+/).filter(Boolean).length
 
-  const save = () => {
-    if (!body.trim()) return
-    const entry = {
-      id: Date.now(),
-      title: title.trim() || 'Untitled',
-      body,
-      date: new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }),
-      time: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
-      words: wordCount,
+  const save = async () => {
+    if (!body.trim() || loading) return
+    setLoading(true)
+    setSaved(false)
+    
+    try {
+      const res = await fetch('/api/journal', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          title: title.trim() || 'Untitled Entry',
+          body: body,
+          date: new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
+        })
+      })
+      const newEntry = await res.json()
+      if (res.ok) {
+        setEntries(prev => [newEntry, ...prev])
+        setTitle('')
+        setBody('')
+        setSaved(true)
+        setTimeout(() => setSaved(false), 3000)
+      }
+    } catch (err) {
+      console.error('Error saving journal:', err)
     }
-    const updated = [entry, ...entries]
-    setEntries(updated)
-    localStorage.setItem('luma_journal', JSON.stringify(updated))
-    setTitle('')
-    setBody('')
-    setSaved(true)
-    setTimeout(() => setSaved(false), 3000)
+    setLoading(false)
   }
 
-  const deleteEntry = (id) => {
-    const updated = entries.filter(e => e.id !== id)
-    setEntries(updated)
-    localStorage.setItem('luma_journal', JSON.stringify(updated))
-    if (viewing?.id === id) setViewing(null)
+  const deleteEntry = async (id) => {
+    try {
+      const res = await fetch(`/api/journal/${id}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+      if (res.ok) {
+        setEntries(prev => prev.filter(e => e.id !== id))
+        if (viewing?.id === id) setViewing(null)
+      }
+    } catch (err) {
+      console.error(err)
+    }
   }
 
   const filtered = entries.filter(e =>
@@ -61,12 +97,57 @@ export default function Journal() {
           onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--border2)'}
           onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--border)'}
         >← Back to Journal</button>
+        
         <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 12 }}>
-          {viewing.date} · {viewing.time} · {viewing.words} words
+          {viewing.date} · {viewing.words} words
         </div>
-        <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 'clamp(1rem, 2vw, 1.4rem)', marginBottom: 32, lineHeight: 1.4 }}>
+        <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 'clamp(1rem, 2vw, 1.4rem)', marginBottom: 28, lineHeight: 1.4 }}>
           {viewing.title}
         </h2>
+
+        {/* AI Reflection Panel */}
+        <div style={{
+          background: 'rgba(167,139,250,0.04)', border: '1px solid rgba(167,139,250,0.2)',
+          borderRadius: 'var(--radius)', padding: '24px 28px', marginBottom: 24,
+          display: 'flex', flexDirection: 'column', gap: 14
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ fontSize: 18 }}>✦</span>
+            <h3 style={{ fontFamily: 'var(--font-heading)', fontSize: '0.78rem', color: 'var(--accent)', letterSpacing: '0.04em' }}>
+              LUMA'S REFLECTION
+            </h3>
+          </div>
+          <p style={{ fontSize: '0.82rem', color: 'var(--text)', lineHeight: 1.6, fontStyle: 'italic' }}>
+            "{viewing.summary}"
+          </p>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 4 }}>
+            {viewing.themes.map((theme, i) => (
+              <span key={i} style={{ fontSize: '0.65rem', background: 'var(--surface2)', color: 'var(--accent)', padding: '3px 10px', borderRadius: 4 }}>
+                🏷️ {theme}
+              </span>
+            ))}
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16, marginTop: 8, paddingTop: 14, borderTop: '1px solid var(--border)' }}>
+            <div>
+              <div style={{ fontSize: '0.68rem', color: 'var(--text-dim)', letterSpacing: '0.05em', marginBottom: 4 }}>STRENGTHS REVEALED</div>
+              {viewing.positives.map((p, i) => (
+                <div key={i} style={{ fontSize: '0.75rem', color: 'var(--teal)', display: 'flex', gap: 6, alignItems: 'flex-start' }}>
+                  <span>✓</span> <span>{p}</span>
+                </div>
+              ))}
+            </div>
+            <div>
+              <div style={{ fontSize: '0.68rem', color: 'var(--text-dim)', letterSpacing: '0.05em', marginBottom: 4 }}>COPING STRATEGIES</div>
+              {viewing.coping.map((c, i) => (
+                <div key={i} style={{ fontSize: '0.75rem', color: 'var(--accent)', display: 'flex', gap: 6, alignItems: 'flex-start' }}>
+                  <span>◆</span> <span>{c}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Journal content body */}
         <div style={{
           background: 'var(--surface)', border: '1px solid var(--border)',
           borderRadius: 'var(--radius)', padding: '36px',
@@ -75,13 +156,14 @@ export default function Journal() {
         }}>
           {viewing.body}
         </div>
+        
         <button
           onClick={() => deleteEntry(viewing.id)}
           style={{
             background: 'rgba(251,113,133,0.08)', border: '1px solid rgba(251,113,133,0.2)',
             borderRadius: 100, padding: '9px 20px',
             color: 'var(--rose)', fontFamily: 'var(--font-body)',
-            fontSize: '0.75rem', cursor: 'pointer', marginTop: 20,
+            fontSize: '0.75rem', cursor: 'pointer', marginTop: 24,
             transition: 'all 0.2s',
           }}
           onMouseEnter={e => e.currentTarget.style.background = 'rgba(251,113,133,0.15)'}
@@ -94,15 +176,15 @@ export default function Journal() {
   return (
     <div>
       <span className="section-tag">Journal</span>
-      <h2 className="section-title">Your private space</h2>
-      <p className="section-sub">Write freely. Your entries are stored only on this device.</p>
+      <h2 className="section-title">Your Private Sanctuary</h2>
+      <p className="section-sub">Free-write your thoughts. Luma will analyze emotional patterns and coping suggestions.</p>
 
       {saved && (
         <div style={{
           background: 'rgba(45,212,191,0.1)', border: '1px solid rgba(45,212,191,0.3)',
           borderRadius: 12, padding: '12px 20px', marginBottom: 28,
           color: 'var(--teal)', fontSize: '0.82rem', animation: 'fadeUp 0.4s ease',
-        }}>✓ Entry saved</div>
+        }}>✓ Entry analyzed and saved successfully.</div>
       )}
 
       {/* Write area */}
@@ -114,6 +196,7 @@ export default function Journal() {
           value={title}
           onChange={e => setTitle(e.target.value)}
           placeholder="Entry title..."
+          disabled={loading}
           style={{
             width: '100%', background: 'transparent', border: 'none',
             borderBottom: '1px solid var(--border)',
@@ -127,8 +210,9 @@ export default function Journal() {
         <textarea
           value={body}
           onChange={e => setBody(e.target.value)}
-          placeholder="What's on your mind today? Write without filters..."
+          placeholder="What is happening in your life? Describe your thoughts and emotions..."
           rows={10}
+          disabled={loading}
           style={{
             width: '100%', background: 'transparent', border: 'none',
             color: 'var(--text)', fontFamily: 'var(--font-body)',
@@ -137,28 +221,32 @@ export default function Journal() {
           }}
         />
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
-          <span style={{ fontSize: '0.72rem', color: 'var(--text-dim)' }}>{wordCount} words</span>
+          <span style={{ fontSize: '0.72rem', color: 'var(--text-dim)' }}>
+            {loading ? 'Luma is reflecting...' : `${wordCount} words`}
+          </span>
           <button
             onClick={save}
-            disabled={!body.trim()}
+            disabled={!body.trim() || loading}
             style={{
-              background: body.trim()
+              background: body.trim() && !loading
                 ? 'linear-gradient(135deg, var(--accent), var(--accent2))'
                 : 'rgba(255,255,255,0.05)',
               border: 'none', borderRadius: 100,
               padding: '10px 28px',
-              color: body.trim() ? '#fff' : 'var(--text-dim)',
+              color: body.trim() && !loading ? '#fff' : 'var(--text-dim)',
               fontFamily: 'var(--font-body)', fontSize: '0.78rem',
               fontWeight: 500, letterSpacing: '0.08em',
-              cursor: body.trim() ? 'pointer' : 'not-allowed',
+              cursor: body.trim() && !loading ? 'pointer' : 'not-allowed',
               transition: 'all 0.3s ease',
-              boxShadow: body.trim() ? '0 0 24px var(--accent-glow)' : 'none',
+              boxShadow: body.trim() && !loading ? '0 0 24px var(--accent-glow)' : 'none',
             }}
-          >Save Entry</button>
+          >
+            {loading ? 'Analyzing...' : 'Analyze & Save'}
+          </button>
         </div>
       </div>
 
-      {/* Search */}
+      {/* Search and List */}
       {entries.length > 0 && (
         <>
           <div style={{ position: 'relative', marginBottom: 24 }}>
@@ -209,9 +297,16 @@ export default function Journal() {
                     <div style={{ fontSize: '0.68rem', color: 'var(--text-dim)' }}>{entry.words} words</div>
                   </div>
                 </div>
-                <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', lineHeight: 1.6, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
+                <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', lineHeight: 1.6, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', marginBottom: 10 }}>
                   {entry.body}
                 </p>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {entry.themes.map((t, idx) => (
+                    <span key={idx} style={{ fontSize: '0.62rem', background: 'var(--surface2)', color: 'var(--accent)', borderRadius: 4, padding: '2px 6px' }}>
+                      {t}
+                    </span>
+                  ))}
+                </div>
               </div>
             ))}
           </div>

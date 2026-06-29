@@ -1,49 +1,130 @@
-/* ============================================================
-   App.jsx — UPDATED
-   QuickNav card labels updated to use:
-   - Card label: --font-heading (Trispace)
-   - Card desc: --font-body (Monda)
-   ============================================================ */
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import './styles/global.css'
-import Navbar    from './components/Navbar'
-import Hero      from './components/Hero'
+import Navbar      from './components/Navbar'
+import Hero        from './components/Hero'
 import MoodTracker from './components/MoodTracker'
-import Journal   from './components/Journal'
-import Chatbot   from './components/Chatbot'
-import Quotes    from './components/Quotes'
-import Meditation from './components/Meditation'
-import Login     from './components/Login'
-import Register  from './components/Register'
-import Footer    from './components/Footer'
+import Journal     from './components/Journal'
+import Chatbot     from './components/Chatbot'
+import Quotes      from './components/Quotes'
+import Meditation  from './components/Meditation'
+import Login       from './components/Login'
+import Register    from './components/Register'
+import Footer      from './components/Footer'
+import Dashboard   from './components/Dashboard'
+import UserProfile from './components/UserProfile'
+import Analytics   from './components/Analytics'
+import Notifications from './components/Notifications'
 
 export default function App() {
   const [activePage, setActivePage] = useState('home')
+  const [token, setToken] = useState(localStorage.getItem('luma_token') || null)
+  const [user, setUser] = useState(null)
+  const [theme, setTheme] = useState(localStorage.getItem('luma_theme') || 'dark')
+
+  // Apply visual theme to html/body elements
+  useEffect(() => {
+    if (theme === 'light') {
+      document.body.classList.add('light-theme')
+    } else {
+      document.body.classList.remove('light-theme')
+    }
+    localStorage.setItem('luma_theme', theme)
+  }, [theme])
+
+  // Fetch current user details on token change
+  useEffect(() => {
+    if (token) {
+      localStorage.setItem('luma_token', token)
+      fetchUserProfile()
+    } else {
+      localStorage.removeItem('luma_token')
+      setUser(null)
+      if (activePage !== 'home' && activePage !== 'quotes' && activePage !== 'meditation' && activePage !== 'login' && activePage !== 'register') {
+        setActivePage('home')
+      }
+    }
+  }, [token])
+
+  const fetchUserProfile = async () => {
+    try {
+      const res = await fetch('/api/auth/me', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+      const data = await res.json()
+      if (res.ok && data.user) {
+        setUser(data.user)
+        // If theme or lang is saved in user preferences, set it
+        if (data.user.preferences?.theme) {
+          setTheme(data.user.preferences.theme)
+        }
+        // Redirect to dashboard if logged in and currently on home/login/register pages
+        setActivePage(prev => (prev === 'home' || prev === 'login' || prev === 'register') ? 'dashboard' : prev)
+      } else {
+        // Clear expired token
+        setToken(null)
+      }
+    } catch (err) {
+      console.error('Error fetching user profile:', err)
+      setToken(null)
+    }
+  }
+
+  const logout = () => {
+    setToken(null)
+    setUser(null)
+    setActivePage('home')
+  }
+
+  const updateUserProfile = (updatedUser) => {
+    setUser(updatedUser)
+    if (updatedUser.preferences?.theme) {
+      setTheme(updatedUser.preferences.theme)
+    }
+  }
 
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--bg)' }}>
-      <Navbar activePage={activePage} setActivePage={setActivePage} />
-      {activePage === 'home' && (
-        <>
-          <Hero setActivePage={setActivePage} />
-          <div style={{ padding: '0 clamp(16px, 5vw, 80px)', maxWidth: 1280, margin: '0 auto' }}>
-            <QuickNav setActivePage={setActivePage} />
-          </div>
-          <Footer setActivePage={setActivePage} />
-        </>
-      )}
-      {activePage === 'mood'       && <FeaturePage><MoodTracker /></FeaturePage>}
-      {activePage === 'journal'    && <FeaturePage><Journal /></FeaturePage>}
-      {activePage === 'chat'       && <FeaturePage><Chatbot /></FeaturePage>}
-      {activePage === 'quotes'     && <FeaturePage><Quotes /></FeaturePage>}
-      {activePage === 'meditation' && <FeaturePage><Meditation /></FeaturePage>}
-      {activePage === 'login'      && <Login setActivePage={setActivePage} />}
-      {activePage === 'register'   && <Register setActivePage={setActivePage} />}
+    <div style={{ minHeight: '100vh', background: 'var(--bg)', display: 'flex', flexDirection: 'column' }}>
+      <Navbar 
+        activePage={activePage} 
+        setActivePage={setActivePage} 
+        token={token} 
+        user={user} 
+        logout={logout}
+        theme={theme}
+        setTheme={setTheme}
+      />
+      
+      <main style={{ flex: 1 }}>
+        {activePage === 'home' && (
+          <>
+            <Hero setActivePage={setActivePage} />
+            <div style={{ padding: '0 clamp(16px, 5vw, 80px)', maxWidth: 1280, margin: '0 auto' }}>
+              <QuickNav setActivePage={setActivePage} token={token} />
+            </div>
+            <Footer setActivePage={setActivePage} />
+          </>
+        )}
+        
+        {/* Logged in views */}
+        {activePage === 'dashboard'  && <FeaturePage><Dashboard setActivePage={setActivePage} token={token} user={user} updateUserProfile={updateUserProfile} /></FeaturePage>}
+        {activePage === 'mood'       && <FeaturePage><MoodTracker token={token} /></FeaturePage>}
+        {activePage === 'journal'    && <FeaturePage><Journal token={token} /></FeaturePage>}
+        {activePage === 'chat'       && <FeaturePage><Chatbot token={token} user={user} /></FeaturePage>}
+        {activePage === 'profile'    && <FeaturePage><UserProfile token={token} user={user} updateUserProfile={updateUserProfile} setActivePage={setActivePage} logout={logout} /></FeaturePage>}
+        {activePage === 'analytics'  && <FeaturePage><Analytics token={token} /></FeaturePage>}
+        {activePage === 'notifications' && <FeaturePage><Notifications setActivePage={setActivePage} /></FeaturePage>}
+
+        {/* Guest access allowed views */}
+        {activePage === 'quotes'     && <FeaturePage><Quotes /></FeaturePage>}
+        {activePage === 'meditation' && <FeaturePage><Meditation token={token} /></FeaturePage>}
+        {activePage === 'login'      && <Login setActivePage={setActivePage} setToken={setToken} />}
+        {activePage === 'register'   && <Register setActivePage={setActivePage} setToken={setToken} />}
+      </main>
     </div>
   )
 }
 
-function QuickNav({ setActivePage }) {
+function QuickNav({ setActivePage, token }) {
   const cards = [
     { id: 'mood',       icon: '🌊', label: 'Mood Tracker', desc: 'Track how you feel, day by day',    color: '#7c3aed' },
     { id: 'journal',    icon: '📓', label: 'Journal',      desc: 'Write your thoughts freely',        color: '#0e7490' },
@@ -52,8 +133,16 @@ function QuickNav({ setActivePage }) {
     { id: 'meditation', icon: '◎',  label: 'Breathe',      desc: 'Guided breathing exercises',        color: '#065f46' },
   ]
 
+  const handleNav = (id) => {
+    if (!token && (id === 'mood' || id === 'journal' || id === 'chat')) {
+      setActivePage('login')
+    } else {
+      setActivePage(id)
+    }
+  }
+
   return (
-    <section style={{ padding: '80px 0 120px' }}>
+    <section style={{ padding: '40px 0 80px' }}>
       <div style={{ textAlign: 'center', marginBottom: 60 }}>
         <span className="section-tag">Your Space</span>
         <h2 className="section-title" style={{ textAlign: 'center' }}>Everything you need</h2>
@@ -69,7 +158,7 @@ function QuickNav({ setActivePage }) {
         {cards.map((card, i) => (
           <button
             key={card.id}
-            onClick={() => setActivePage(card.id)}
+            onClick={() => handleNav(card.id)}
             style={{
               background: 'var(--surface)',
               border: '1px solid var(--border)',
@@ -136,8 +225,8 @@ function FeaturePage({ children }) {
   return (
     <div style={{
       minHeight: '100vh',
-      padding: 'clamp(100px, 12vw, 140px) clamp(16px, 5vw, 80px) 80px',
-      maxWidth: 1000,
+      padding: 'clamp(90px, 10vw, 120px) clamp(16px, 5vw, 80px) 60px',
+      maxWidth: 1100,
       margin: '0 auto',
       animation: 'fadeUp 0.5s ease',
     }}>

@@ -36,6 +36,29 @@
   --transition: 0.3s cubic-bezier(0.4,0,0.2,1);
 }
 
+.light-theme {
+  --bg: #f8f9fa;
+  --bg2: #f1f3f5;
+  --surface: rgba(0,0,0,0.02);
+  --surface2: rgba(0,0,0,0.05);
+  --border: rgba(0,0,0,0.08);
+  --border2: rgba(0,0,0,0.14);
+  --text: #1a1a24;
+  --text-muted: rgba(26,26,36,0.65);
+  --text-dim: rgba(26,26,36,0.38);
+  --accent: #6d28d9;
+  --accent2: #4c1d95;
+  --accent-glow: rgba(109,40,217,0.15);
+  --teal: #0f766e;
+  --teal-glow: rgba(15,118,110,0.15);
+  --rose: #e11d48;
+  --amber: #b45309;
+}
+
+body {
+  transition: background-color 0.4s ease, color 0.4s ease;
+}
+
 *, *::before, *::after {
   box-sizing: border-box;
   margin: 0;

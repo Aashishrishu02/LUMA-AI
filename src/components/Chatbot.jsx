@@ -1,7 +1,3 @@
-// ============================================================
-//  Chatbot.jsx — UPDATED
-//  Features Text Mode + Live Continuous Voice Agent Call Mode
-// ============================================================
 import { useState, useRef, useEffect } from 'react'
 
 const suggestions = [
@@ -15,17 +11,15 @@ const suggestions = [
 const SUPPORTED_LANGUAGES = [
   { code: 'en-IN', label: 'English' },
   { code: 'hi-IN', label: 'Hindi (हिंदी)' },
-  { code: 'bho-IN', label: 'Bhojpuri (भोजपुरी)' },
   { code: 'bn-IN', label: 'Bengali (বাংলা)' },
   { code: 'ta-IN', label: 'Tamil (தமிழ்)' },
   { code: 'te-IN', label: 'Telugu (తెలుగు)' },
   { code: 'mr-IN', label: 'Marathi (मराठी)' },
-  { code: 'gu-IN', label: 'Gujarati (ગુજરાતી)' },
 ]
 
-export default function Chatbot() {
-  const [language, setLanguage] = useState('en-IN')
-  const languageRef = useRef('en-IN')
+export default function Chatbot({ token, user }) {
+  const [language, setLanguage] = useState(user?.preferences?.language || 'en-IN')
+  const languageRef = useRef(language)
 
   useEffect(() => {
     languageRef.current = language
@@ -33,7 +27,7 @@ export default function Chatbot() {
 
   const [messages, setMessages] = useState([{
     role: 'assistant',
-    content: "Hello, I'm LUMA 🌙 I'm here to listen, support, and help you find your calm. How are you feeling right now?",
+    content: `Hello ${user?.name || ''} 🌙 I'm Luma. I'm here to listen, support, and help you find your calm. How are you feeling right now?`,
   }])
   const [input, setInput]     = useState('')
   const [loading, setLoading] = useState(false)
@@ -41,18 +35,13 @@ export default function Chatbot() {
   
   const [isListening, setIsListening] = useState(false)
   const [isSpeaking, setIsSpeaking] = useState(false)
-  
-  const messagesRef = useRef(messages)
-  useEffect(() => {
-    messagesRef.current = messages
-  }, [messages])
+  const [isMuted, setIsMuted] = useState(false)
+  const [crisisAlert, setCrisisAlert] = useState(false)
   
   // Advanced Voice Call Mode State
   const [isCallMode, setIsCallMode] = useState(false)
   const callModeRef = useRef(false)
   const recognitionRef = useRef(null)
-  
-  // Independent history for Voice Mode to prevent leaking to Text UI
   const voiceMessagesRef = useRef([])
 
   const bottomRef = useRef(null)
@@ -71,10 +60,30 @@ export default function Chatbot() {
     }
   }, [])
 
+  // Crisis detection filter
+  const detectCrisis = (text) => {
+    const crisisKeywords = [
+      'want to die',
+      'kill myself',
+      'hurt myself',
+      'self harm',
+      'suicide',
+      'end my life',
+      'don\'t want to live',
+      'wanna die'
+    ]
+    return crisisKeywords.some(kw => text.toLowerCase().includes(kw))
+  }
+
   // ── Standard Text Send ──
   const send = async (text) => {
     const userText = text || input.trim()
     if (!userText || loading) return
+
+    // Check crisis
+    if (detectCrisis(userText)) {
+      setCrisisAlert(true)
+    }
 
     const userMsg = { role: 'user', content: userText }
     const updated = [...messages, userMsg]
@@ -84,15 +93,26 @@ export default function Chatbot() {
     setError(null)
 
     try {
+      const headers = { 'Content-Type': 'application/json' }
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`
+      }
+
       const res = await fetch('/api/chat', {
         method : 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: headers,
         body   : JSON.stringify({ messages: updated }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || `Server error ${res.status}`)
 
-      setMessages(prev => [...prev, { role: 'assistant', content: data.reply }])
+      // If crisis, we append a safe supportive advice directly
+      let finalReply = data.reply
+      if (detectCrisis(userText)) {
+        finalReply = "I hear how much pain you're in, and I want to support you, but I'm an AI companion and cannot replace professional care. Please reach out to someone who can help. You are not alone. 🛡️"
+      }
+
+      setMessages(prev => [...prev, { role: 'assistant', content: finalReply }])
     } catch (err) {
       console.error('LUMA chat error:', err)
       setError(err.message)
@@ -108,9 +128,10 @@ export default function Chatbot() {
   const clearChat = () => {
     setMessages([{
       role: 'assistant',
-      content: "Hello, I'm LUMA 🌙 I'm here to listen, support, and help you find your calm. How are you feeling right now?",
+      content: `Hello ${user?.name || ''} 🌙 I'm Luma. I'm here to listen, support, and help you find your calm. How are you feeling right now?`,
     }])
     setError(null)
+    setCrisisAlert(false)
     window.speechSynthesis.cancel()
     setIsSpeaking(false)
   }
@@ -123,12 +144,11 @@ export default function Chatbot() {
     }
     callModeRef.current = true
     setIsCallMode(true)
-    // Clear voice history for a fresh call
+    setIsMuted(false)
     voiceMessagesRef.current = []
     window.speechSynthesis.cancel() 
     
-    // Immediately greet the user
-    speakTextCallMode("I am listening. How can I help you today?")
+    speakTextCallMode(`Hello ${user?.name || ''}, I am listening. How can I help you find peace today?`)
   }
 
   const endCallMode = () => {
@@ -138,66 +158,84 @@ export default function Chatbot() {
     setIsSpeaking(false)
     setLoading(false)
     if (recognitionRef.current) {
-       try { recognitionRef.current.abort() } catch(e) {}
+        try { recognitionRef.current.abort() } catch(e) {}
     }
     window.speechSynthesis.cancel()
   }
 
   const handleVoiceTurn = () => {
-    if (!callModeRef.current) return
+    if (!callModeRef.current || isMuted) return
     
     if (!recognitionRef.current) {
        const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition
        recognitionRef.current = new SpeechRecognitionAPI()
        recognitionRef.current.continuous = false
-       recognitionRef.current.interimResults = false
-       // Recognition language will be updated below
+       recognitionRef.current.interimResults = true // allows listening for interruptions
     }
 
     const rec = recognitionRef.current
     rec.lang = languageRef.current
-    rec.onstart = () => { if (callModeRef.current) setIsListening(true) }
+    
+    rec.onstart = () => { 
+      if (callModeRef.current) setIsListening(true) 
+    }
     
     rec.onresult = async (event) => {
       if (!callModeRef.current) return
       
       const transcript = event.results[0][0].transcript.trim()
-      setIsListening(false)
       
-      if (!transcript) {
-        if (callModeRef.current) setTimeout(handleVoiceTurn, 300)
-        return
+      // User Interruption: if AI is speaking and user speaks, cut off AI immediately
+      if (isSpeaking && transcript.length > 2) {
+        window.speechSynthesis.cancel()
+        setIsSpeaking(false)
       }
-      
-      setLoading(true)
 
-      // Append to the isolated Voice history
-      const updatedMessages = [...voiceMessagesRef.current, { role: 'user', content: transcript }]
-      voiceMessagesRef.current = updatedMessages
-      
-      try {
-        const res = await fetch('/api/chat', {
-          method : 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body   : JSON.stringify({ messages: updatedMessages }),
-        })
-        const data = await res.json()
-        if (!res.ok) throw new Error()
+      if (event.results[0].isFinal) {
+        setIsListening(false)
+        if (!transcript) {
+          setTimeout(handleVoiceTurn, 300)
+          return
+        }
+
+        // Check crisis in spoken text
+        if (detectCrisis(transcript)) {
+          setCrisisAlert(true)
+          speakTextCallMode("I hear you, and I want you to be safe. Please know you are not alone. I am showing crisis numbers on your dashboard screen.")
+          return
+        }
+
+        setLoading(true)
+        const updatedMessages = [...voiceMessagesRef.current, { role: 'user', content: transcript }]
+        voiceMessagesRef.current = updatedMessages
         
-        // Save assistant reply to isolated history
-        voiceMessagesRef.current = [...updatedMessages, { role: 'assistant', content: data.reply }]
-        
-        if (callModeRef.current) speakTextCallMode(data.reply)
-      } catch (err) {
-        setLoading(false)
-        if (callModeRef.current) speakTextCallMode("I lost connection. Please try saying that again.")
+        try {
+          const headers = { 'Content-Type': 'application/json' }
+          if (token) {
+            headers['Authorization'] = `Bearer ${token}`
+          }
+
+          const res = await fetch('/api/chat', {
+            method : 'POST',
+            headers: headers,
+            body   : JSON.stringify({ messages: updatedMessages }),
+          })
+          const data = await res.json()
+          if (!res.ok) throw new Error()
+          
+          voiceMessagesRef.current = [...updatedMessages, { role: 'assistant', content: data.reply }]
+          
+          if (callModeRef.current) speakTextCallMode(data.reply)
+        } catch (err) {
+          setLoading(false)
+          if (callModeRef.current) speakTextCallMode("I lost connection. Please speak again.")
+        }
       }
     }
     
     rec.onerror = (event) => {
       if (!callModeRef.current) return
       setIsListening(false)
-      // Auto-loop if it times out with no speech
       if (event.error === 'no-speech') {
         setTimeout(handleVoiceTurn, 300)
       } else if (event.error !== 'aborted') {
@@ -217,7 +255,6 @@ export default function Chatbot() {
     if (!('speechSynthesis' in window)) return
     window.speechSynthesis.cancel()
     
-    // Clean markdown for seamless voice
     const cleanText = text.replace(/[*#_`~]/g, '')
     const utterance = new SpeechSynthesisUtterance(cleanText)
     const voices = window.speechSynthesis.getVoices()
@@ -227,9 +264,8 @@ export default function Chatbot() {
       || voices.find(v => v.lang === languageRef.current)
       || voices.find(v => v.lang.startsWith(langPrefix))
 
-    // Fallback if no regional voice pack natively installed
     if (!preferredVoice) {
-      preferredVoice = voices.find(v => v.name.includes('Female') || v.name.includes('Google UK English Female') || v.name.includes('Samantha') || v.name.includes('Google US English'))
+      preferredVoice = voices.find(v => v.name.includes('Female') || v.name.includes('Google UK English Female') || v.name.includes('Samantha'))
     }
     
     if (preferredVoice) {
@@ -239,22 +275,38 @@ export default function Chatbot() {
       utterance.lang = languageRef.current
     }
 
-    utterance.rate = 1.0
+    utterance.rate = 0.95
     utterance.onstart = () => { 
-       if (callModeRef.current) { setIsSpeaking(true); setLoading(false) } 
+       if (callModeRef.current) { 
+         setIsSpeaking(true)
+         setLoading(false) 
+       } 
     }
     utterance.onend = () => { 
       setIsSpeaking(false)
       if (callModeRef.current) {
-         setTimeout(handleVoiceTurn, 50) 
+         setTimeout(handleVoiceTurn, 200) 
       }
     }
     utterance.onerror = () => {
       setIsSpeaking(false)
-      if (callModeRef.current) setTimeout(handleVoiceTurn, 50) 
+      if (callModeRef.current) setTimeout(handleVoiceTurn, 200) 
     }
     
     window.speechSynthesis.speak(utterance)
+  }
+
+  const toggleMute = () => {
+    if (isMuted) {
+      setIsMuted(false)
+      setTimeout(handleVoiceTurn, 100)
+    } else {
+      setIsMuted(true)
+      setIsListening(false)
+      if (recognitionRef.current) {
+        try { recognitionRef.current.abort() } catch(e) {}
+      }
+    }
   }
 
   return (
@@ -263,8 +315,8 @@ export default function Chatbot() {
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 12 }}>
         <div>
           <span className="section-tag">AI Companion</span>
-          <h2 className="section-title">Talk to LUMA</h2>
-          <p className="section-sub">A safe space to express yourself, anytime.</p>
+          <h2 className="section-title">Talk to Luma</h2>
+          <p className="section-sub">A warm, safe place to explore your feelings.</p>
         </div>
         <div style={{ display: 'flex', gap: 8, marginTop: 6, alignItems: 'center' }}>
           
@@ -281,7 +333,7 @@ export default function Chatbot() {
             }}
           >
              {SUPPORTED_LANGUAGES.map(lang => (
-               <option key={lang.code} value={lang.code} style={{ background: '#1e1e2d', color: '#fff' }}>{lang.label}</option>
+               <option key={lang.code} value={lang.code} style={{ background: 'var(--bg2)', color: 'var(--text)' }}>{lang.label}</option>
              ))}
           </select>
 
@@ -296,7 +348,7 @@ export default function Chatbot() {
                 cursor: 'pointer', transition: 'all 0.2s ease',
                 boxShadow: '0 0 15px var(--accent-glow)'
               }}
-            >📞 Voice Agent</button>
+            >📞 Voice Call</button>
           )}
           <button
             onClick={clearChat}
@@ -310,6 +362,25 @@ export default function Chatbot() {
           >Clear ✕</button>
         </div>
       </div>
+
+      {/* Crisis Warning Block */}
+      {crisisAlert && (
+        <div style={{
+          background: 'rgba(251,113,133,0.08)', border: '1px solid rgba(251,113,133,0.3)',
+          borderRadius: 12, padding: '16px 20px', marginBottom: 16,
+          animation: 'fadeUp 0.4s ease'
+        }}>
+          <h4 style={{ color: 'var(--rose)', fontSize: '0.88rem', fontWeight: 700, marginBottom: 6 }}>🛡️ Support & Helplines Available</h4>
+          <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', lineHeight: 1.5, marginBottom: 12 }}>
+            You are not alone. Please consider reaching out to a professional or a local crisis line:
+          </p>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 10, fontSize: '0.75rem', color: 'var(--text)' }}>
+            <span>• India AASRA: 91-9820466726</span>
+            <span>• India Vandrevala: 91-9999666555</span>
+            <span>• US/Canada Helpline: Dial 988</span>
+          </div>
+        </div>
+      )}
 
       {/* ── Error banner ── */}
       {error && !isCallMode && (
@@ -331,34 +402,61 @@ export default function Chatbot() {
           alignItems: 'center', justifyContent: 'center', marginBottom: 16,
           boxShadow: 'inset 0 0 50px rgba(167,139,250,0.05)', position: 'relative'
         }}>
+           
+           {/* Waveform Visualization */}
+           <div style={{ display: 'flex', gap: 6, height: 60, alignItems: 'center', marginBottom: 30 }}>
+             {[0, 1, 2, 3, 4, 5, 6, 7].map(i => {
+               const anim = isSpeaking 
+                 ? `breathe 0.5s ease infinite alternate ${i * 0.08}s` 
+                 : (isListening ? `breathe 1.2s ease infinite alternate ${i * 0.15}s` : 'none')
+               const height = isSpeaking ? 50 : (isListening ? 25 : 8)
+               return (
+                 <div key={i} style={{
+                   width: 5,
+                   height: height,
+                   background: isSpeaking ? 'var(--accent)' : (isListening ? 'var(--teal)' : 'var(--text-dim)'),
+                   borderRadius: 4,
+                   animation: anim,
+                   transition: 'height 0.3s, background-color 0.3s'
+                 }} />
+               )
+             })}
+           </div>
+
            <div style={{
-              width: 140, height: 140, borderRadius: '50%',
-              background: isSpeaking ? 'linear-gradient(135deg, var(--accent), var(--accent2))' : 'rgba(255,255,255,0.05)',
-              boxShadow: isSpeaking ? '0 0 60px rgba(167,139,250,0.6)' : (isListening ? '0 0 30px rgba(251,113,133,0.3)' : 'none'),
+              width: 110, height: 110, borderRadius: '50%',
+              background: isSpeaking ? 'linear-gradient(135deg, var(--accent), var(--accent2))' : 'rgba(255,255,255,0.04)',
+              boxShadow: isSpeaking ? '0 0 40px var(--accent-glow)' : 'none',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              transition: 'all 0.5s ease',
-              animation: isListening || isSpeaking || loading ? 'breathe 1.5s ease infinite' : 'none',
-              border: isListening ? '2px solid var(--rose)' : '1px solid var(--border)',
+              border: isListening ? '2px solid var(--teal)' : '1px solid var(--border)',
            }}>
-              <span style={{ fontSize: 50, animation: loading ? 'breathe 0.5s infinite alternate' : 'none' }}>
+              <span style={{ fontSize: 40 }}>
                 {isSpeaking ? '🔮' : (isListening ? '🎙️' : '🌙')}
               </span>
            </div>
 
-           <div style={{ marginTop: 40, fontFamily: 'var(--font-heading)', letterSpacing: '0.05em', fontSize: '1.2rem', color: isListening ? 'var(--rose)' : 'var(--text)', transition: 'color 0.3s' }}>
-              {isSpeaking ? 'Luma is speaking...' : (loading ? 'Luma is thinking...' : (isListening ? 'Listening...' : 'Connecting...'))}
+           <div style={{ marginTop: 32, fontFamily: 'var(--font-heading)', letterSpacing: '0.05em', fontSize: '1.1rem', color: isListening ? 'var(--teal)' : 'var(--text)' }}>
+              {isMuted ? 'Microphone Muted' : (isSpeaking ? 'Luma is speaking...' : (loading ? 'Thinking...' : (isListening ? 'Listening...' : 'Connected')))}
            </div>
            
-           <p style={{ marginTop: 8, fontSize: '0.8rem', color: 'var(--text-dim)', textAlign: 'center', maxWidth: 220 }}>
-              Speak naturally. Luma will auto-detect when you stop and answer you.
+           <p style={{ marginTop: 6, fontSize: '0.75rem', color: 'var(--text-dim)', textAlign: 'center', maxWidth: 260 }}>
+              Speak naturally. Luma detects speech & pauses. Cuts in if you interrupt.
            </p>
 
-           <button onClick={endCallMode} style={{
-             position: 'absolute', bottom: 30,
-             padding: '12px 30px', borderRadius: 30, background: 'linear-gradient(135deg, #fb7185, #e11d48)',
-             color: '#fff', border: 'none', fontSize: '0.9rem', cursor: 'pointer', boxShadow: '0 4px 15px rgba(251,113,133,0.4)',
-             fontFamily: 'var(--font-heading)', fontWeight: 600,
-           }}>End Live Call</button>
+           <div style={{ position: 'absolute', bottom: 30, display: 'flex', gap: 14 }}>
+             <button onClick={toggleMute} style={{
+               padding: '12px 24px', borderRadius: 30, background: isMuted ? 'var(--teal)' : 'rgba(255,255,255,0.06)',
+               color: '#fff', border: '1px solid var(--border)', fontSize: '0.8rem', cursor: 'pointer',
+               fontFamily: 'var(--font-heading)', fontWeight: 600, transition: 'all 0.3s'
+             }}>
+               {isMuted ? 'Unmute Mic 🎙️' : 'Mute Mic 🔇'}
+             </button>
+             <button onClick={endCallMode} style={{
+               padding: '12px 28px', borderRadius: 30, background: 'linear-gradient(135deg, #fb7185, #e11d48)',
+               color: '#fff', border: 'none', fontSize: '0.8rem', cursor: 'pointer', boxShadow: '0 4px 15px rgba(251,113,133,0.4)',
+               fontFamily: 'var(--font-heading)', fontWeight: 600,
+             }}>End Call</button>
+           </div>
         </div>
       ) : (
         <div style={{
@@ -384,14 +482,13 @@ export default function Chatbot() {
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                     fontSize: 14, marginRight: 12, marginTop: 2,
                     boxShadow: msg.isError ? '0 0 12px rgba(251,113,133,0.4)' : '0 0 12px var(--accent-glow)',
-                    animation: (isSpeaking && !msg.isError && i === messages.length - 1) ? 'breathe 1.5s ease infinite' : 'none'
-                  }}>{msg.isError ? '!' : (isSpeaking && i === messages.length - 1 ? '🔊' : '✦')}</div>
+                  }}>{msg.isError ? '!' : '✦'}</div>
                 )}
                 <div style={{
                   maxWidth: '72%',
                   background: msg.role === 'user'
                     ? 'linear-gradient(135deg, var(--accent2), #4c1d95)'
-                    : msg.isError ? 'rgba(251,113,133,0.08)' : 'rgba(255,255,255,0.05)',
+                    : msg.isError ? 'rgba(251,113,133,0.08)' : 'rgba(255,255,255,0.04)',
                   border: msg.role === 'user' ? 'none'
                     : msg.isError ? '1px solid rgba(251,113,133,0.2)' : '1px solid var(--border)',
                   borderRadius: msg.role === 'user' ? '18px 18px 4px 18px' : '18px 18px 18px 4px',
@@ -413,7 +510,7 @@ export default function Chatbot() {
                   fontSize: 14, boxShadow: '0 0 12px var(--accent-glow)',
                 }}>✦</div>
                 <div style={{
-                  background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border)',
+                  background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)',
                   borderRadius: '18px 18px 18px 4px', padding: '14px 20px',
                   display: 'flex', gap: 6, alignItems: 'center',
                 }}>
@@ -433,7 +530,7 @@ export default function Chatbot() {
           <div style={{
             padding: '16px 20px', borderTop: '1px solid var(--border)',
             display: 'flex', gap: 12, alignItems: 'flex-end',
-            background: 'rgba(4,4,10,0.4)',
+            background: 'var(--surface)',
           }}>
             <textarea
               value={input}
@@ -442,7 +539,7 @@ export default function Chatbot() {
               placeholder="Share what's on your mind…"
               rows={1}
               style={{
-                flex: 1, background: 'rgba(255,255,255,0.04)',
+                flex: 1, background: 'rgba(255,255,255,0.03)',
                 border: '1px solid var(--border)', borderRadius: 14,
                 padding: '12px 18px', color: 'var(--text)',
                 fontFamily: 'var(--font-body)', fontSize: '0.875rem',
@@ -457,7 +554,7 @@ export default function Chatbot() {
                 width: 46, height: 46,
                 background: input.trim() && !loading
                   ? 'linear-gradient(135deg, var(--accent), var(--accent2))'
-                  : 'rgba(255,255,255,0.05)',
+                  : 'rgba(255,255,255,0.04)',
                 border: 'none', borderRadius: 12,
                 color: input.trim() && !loading ? '#fff' : 'var(--text-dim)',
                 fontSize: 20, cursor: input.trim() && !loading ? 'pointer' : 'not-allowed',

@@ -1,21 +1,15 @@
-/* ============================================================
-   Login.jsx
-   Matches LUMA aesthetic:
-   - Glassmorphic form with subtle border
-   - Press Start 2P heading, Trispace labels, Monda body
-   - Purple accent colors with glow effects
-   - Smooth transitions & animations
-   ============================================================ */
 import { useState } from 'react'
 
-export default function Login({ setActivePage }) {
+export default function Login({ setActivePage, setToken }) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+  const [showForgot, setShowForgot] = useState(false)
+  const [forgotEmail, setForgotEmail] = useState('')
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault()
     setError('')
     setSuccess('')
@@ -26,14 +20,80 @@ export default function Login({ setActivePage }) {
     }
 
     setLoading(true)
-    // Simulate API call
-    setTimeout(() => {
-      setLoading(false)
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password })
+      })
+      const data = await res.json()
+      
+      if (!res.ok) {
+        throw new Error(data.error || 'Invalid credentials')
+      }
+
       setSuccess('Login successful! Welcome back. 🌙')
       setEmail('')
       setPassword('')
-      setTimeout(() => setActivePage('home'), 1500)
-    }, 1200)
+      
+      // Update token in parent, which will auto-fetch profile and redirect
+      setTimeout(() => {
+        setToken(data.token)
+      }, 1000)
+
+    } catch (err) {
+      setError(err.message)
+    }
+    setLoading(false)
+  }
+
+  const handleGoogleLogin = async () => {
+    setLoading(true)
+    setError('')
+    try {
+      const res = await fetch('/api/auth/google', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: 'google.guest@luma.com',
+          name: 'Google Companion',
+          googleId: 'g_1029384756'
+        })
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Google login failed')
+
+      setSuccess('Logged in via Google! ✨')
+      setTimeout(() => {
+        setToken(data.token)
+      }, 1000)
+    } catch (err) {
+      setError(err.message)
+    }
+    setLoading(false)
+  }
+
+  const handleForgotPassword = async (e) => {
+    e.preventDefault()
+    setError('')
+    setSuccess('')
+    if (!forgotEmail) return
+
+    setLoading(true)
+    try {
+      const res = await fetch('/api/auth/forgot-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: forgotEmail })
+      })
+      const data = await res.json()
+      setSuccess(data.message)
+      setForgotEmail('')
+      setTimeout(() => setShowForgot(false), 3000)
+    } catch (err) {
+      setError(err.message)
+    }
+    setLoading(false)
   }
 
   return (
@@ -48,294 +108,163 @@ export default function Login({ setActivePage }) {
     }}>
       {/* Decorative blur orbs */}
       <div style={{
-        position: 'absolute',
-        width: 400, height: 400,
-        background: 'radial-gradient(circle, rgba(167,139,250,0.12), transparent)',
-        borderRadius: '50%',
-        top: '-10%', right: '-5%',
-        pointerEvents: 'none',
-        filter: 'blur(80px)',
-      }} />
-      <div style={{
-        position: 'absolute',
-        width: 300, height: 300,
-        background: 'radial-gradient(circle, rgba(45,212,191,0.08), transparent)',
-        borderRadius: '50%',
-        bottom: '10%', left: '-8%',
-        pointerEvents: 'none',
-        filter: 'blur(80px)',
+        position: 'absolute', width: 400, height: 400,
+        background: 'radial-gradient(circle, rgba(167,139,250,0.1), transparent)',
+        borderRadius: '50%', top: '-10%', right: '-5%', pointerEvents: 'none', filter: 'blur(80px)',
       }} />
 
-      {/* Main form container */}
-      <div style={{
-        position: 'relative',
-        zIndex: 1,
-        width: '100%',
-        maxWidth: 440,
-        animation: 'fadeUp 0.7s ease',
-      }}>
+      <div style={{ position: 'relative', zIndex: 1, width: '100%', maxWidth: 440, animation: 'fadeUp 0.7s ease' }}>
+        
         {/* Header */}
-        <div style={{ textAlign: 'center', marginBottom: 48 }}>
-          <h1 style={{
-            fontFamily: 'var(--font-display)',
-            fontSize: 'clamp(1rem, 4vw, 1.5rem)',
-            letterSpacing: '0.15em',
-            color: 'var(--text)',
-            marginBottom: 12,
-            textTransform: 'uppercase',
-          }}>
+        <div style={{ textAlign: 'center', marginBottom: 40 }}>
+          <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 'clamp(1rem, 4vw, 1.3rem)', letterSpacing: '0.15em', color: 'var(--text)', marginBottom: 12, textTransform: 'uppercase' }}>
             Welcome
           </h1>
-          <p style={{
-            fontFamily: 'var(--font-body)',
-            fontSize: '0.9rem',
-            color: 'var(--text-muted)',
-            letterSpacing: '0.03em',
-          }}>
-            Sign in to continue your journey
+          <p style={{ fontFamily: 'var(--font-body)', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+            Sign in to continue your sanctuary journey
           </p>
         </div>
 
-        {/* Form card */}
+        {/* Form Card */}
         <div style={{
-          background: 'var(--surface)',
-          border: '1px solid var(--border)',
-          borderRadius: 'var(--radius)',
-          padding: '48px 36px',
-          backdropFilter: 'blur(20px)',
-          WebkitBackdropFilter: 'blur(20px)',
-          boxShadow: '0 0 60px rgba(167,139,250,0.08)',
+          background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)',
+          padding: '40px 32px', backdropFilter: 'blur(20px)', boxShadow: '0 0 60px rgba(167,139,250,0.06)',
         }}>
-          <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-            {/* Email field */}
-            <div>
-              <label style={{
-                fontFamily: 'var(--font-heading)',
-                fontSize: '0.65rem',
-                fontWeight: 600,
-                letterSpacing: '0.1em',
-                textTransform: 'uppercase',
-                color: 'var(--text-muted)',
-                display: 'block',
-                marginBottom: 8,
-              }}>
-                Email
-              </label>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@example.com"
-                style={{
-                  width: '100%',
-                  background: 'rgba(255,255,255,0.04)',
-                  border: '1px solid var(--border)',
-                  borderRadius: 'var(--radius-sm)',
-                  padding: '12px 16px',
-                  color: 'var(--text)',
-                  fontFamily: 'var(--font-body)',
-                  fontSize: '0.95rem',
-                  transition: 'all 0.25s ease',
-                  outline: 'none',
-                }}
-                onFocus={(e) => {
-                  e.target.style.background = 'rgba(255,255,255,0.08)'
-                  e.target.style.borderColor = 'rgba(167,139,250,0.4)'
-                  e.target.style.boxShadow = '0 0 20px rgba(167,139,250,0.1)'
-                }}
-                onBlur={(e) => {
-                  e.target.style.background = 'rgba(255,255,255,0.04)'
-                  e.target.style.borderColor = 'var(--border)'
-                  e.target.style.boxShadow = 'none'
-                }}
-              />
-            </div>
-
-            {/* Password field */}
-            <div>
-              <label style={{
-                fontFamily: 'var(--font-heading)',
-                fontSize: '0.65rem',
-                fontWeight: 600,
-                letterSpacing: '0.1em',
-                textTransform: 'uppercase',
-                color: 'var(--text-muted)',
-                display: 'block',
-                marginBottom: 8,
-              }}>
-                Password
-              </label>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-                style={{
-                  width: '100%',
-                  background: 'rgba(255,255,255,0.04)',
-                  border: '1px solid var(--border)',
-                  borderRadius: 'var(--radius-sm)',
-                  padding: '12px 16px',
-                  color: 'var(--text)',
-                  fontFamily: 'var(--font-body)',
-                  fontSize: '0.95rem',
-                  transition: 'all 0.25s ease',
-                  outline: 'none',
-                  letterSpacing: '0.1em',
-                }}
-                onFocus={(e) => {
-                  e.target.style.background = 'rgba(255,255,255,0.08)'
-                  e.target.style.borderColor = 'rgba(167,139,250,0.4)'
-                  e.target.style.boxShadow = '0 0 20px rgba(167,139,250,0.1)'
-                }}
-                onBlur={(e) => {
-                  e.target.style.background = 'rgba(255,255,255,0.04)'
-                  e.target.style.borderColor = 'var(--border)'
-                  e.target.style.boxShadow = 'none'
-                }}
-              />
-            </div>
-
-            {/* Error message */}
-            {error && (
-              <div style={{
-                background: 'rgba(251,113,133,0.1)',
-                border: '1px solid rgba(251,113,133,0.3)',
-                borderRadius: 'var(--radius-sm)',
-                padding: '12px 16px',
-                color: '#fb7185',
-                fontSize: '0.82rem',
-                letterSpacing: '0.05em',
-                animation: 'fadeUp 0.3s ease',
-              }}>
-                {error}
+          {!showForgot ? (
+            <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+              
+              <div>
+                <label style={{ fontFamily: 'var(--font-heading)', fontSize: '0.65rem', fontWeight: 600, letterSpacing: '0.15em', textTransform: 'uppercase', color: 'var(--text-dim)', display: 'block', marginBottom: 8 }}>
+                  Email Address
+                </label>
+                <input
+                  type="email" value={email} onChange={e => setEmail(e.target.value)} required placeholder="you@example.com"
+                  style={{ width: '100%', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '12px 16px', color: 'var(--text)', outline: 'none' }}
+                />
               </div>
-            )}
 
-            {/* Success message */}
-            {success && (
-              <div style={{
-                background: 'rgba(45,212,191,0.1)',
-                border: '1px solid rgba(45,212,191,0.3)',
-                borderRadius: 'var(--radius-sm)',
-                padding: '12px 16px',
-                color: 'var(--teal)',
-                fontSize: '0.82rem',
-                letterSpacing: '0.05em',
-                animation: 'fadeUp 0.3s ease',
-              }}>
-                {success}
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <label style={{ fontFamily: 'var(--font-heading)', fontSize: '0.65rem', fontWeight: 600, letterSpacing: '0.15em', textTransform: 'uppercase', color: 'var(--text-dim)', display: 'block' }}>
+                    Password
+                  </label>
+                  <button type="button" onClick={() => setShowForgot(true)} style={{ background: 'none', border: 'none', color: 'var(--accent)', fontSize: '0.68rem', cursor: 'pointer' }}>
+                    Forgot?
+                  </button>
+                </div>
+                <input
+                  type="password" value={password} onChange={e => setPassword(e.target.value)} required placeholder="••••••••"
+                  style={{ width: '100%', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '12px 16px', color: 'var(--text)', outline: 'none' }}
+                />
               </div>
-            )}
 
-            {/* Submit button */}
-            <button
-              type="submit"
-              disabled={loading}
-              style={{
-                marginTop: 12,
-                padding: '14px 24px',
-                background: loading
-                  ? 'rgba(167,139,250,0.2)'
-                  : 'linear-gradient(135deg, var(--accent), var(--accent2))',
-                border: '1px solid rgba(167,139,250,0.4)',
-                borderRadius: 'var(--radius-sm)',
-                color: '#fff',
-                fontFamily: 'var(--font-heading)',
-                fontSize: '0.72rem',
-                fontWeight: 600,
-                letterSpacing: '0.08em',
-                textTransform: 'uppercase',
-                cursor: loading ? 'not-allowed' : 'pointer',
-                transition: 'all 0.25s ease',
-                boxShadow: loading ? 'none' : '0 0 30px rgba(167,139,250,0.25)',
-                opacity: loading ? 0.7 : 1,
-              }}
-              onMouseEnter={(e) => {
-                if (!loading) {
-                  e.currentTarget.style.transform = 'translateY(-2px)'
-                  e.currentTarget.style.boxShadow = '0 8px 40px rgba(167,139,250,0.35)'
-                }
-              }}
-              onMouseLeave={(e) => {
-                if (!loading) {
-                  e.currentTarget.style.transform = 'translateY(0)'
-                  e.currentTarget.style.boxShadow = '0 0 30px rgba(167,139,250,0.25)'
-                }
-              }}
-            >
-              {loading ? 'Signing in...' : 'Sign In'}
-            </button>
-          </form>
+              {error && <div style={{ background: 'rgba(251,113,133,0.08)', border: '1px solid rgba(251,113,133,0.2)', borderRadius: 10, padding: '10px 14px', color: 'var(--rose)', fontSize: '0.78rem' }}>{error}</div>}
+              {success && <div style={{ background: 'rgba(45,212,191,0.08)', border: '1px solid rgba(45,212,191,0.2)', borderRadius: 10, padding: '10px 14px', color: 'var(--teal)', fontSize: '0.78rem' }}>{success}</div>}
+
+              <button
+                type="submit" disabled={loading}
+                style={{
+                  background: 'linear-gradient(135deg, var(--accent), var(--accent2))',
+                  border: 'none', borderRadius: 100, padding: '13px 24px', color: '#fff',
+                  fontFamily: 'var(--font-heading)', fontSize: '0.72rem', fontWeight: 600,
+                  letterSpacing: '0.08em', textTransform: 'uppercase', cursor: 'pointer', transition: 'all 0.2s',
+                  boxShadow: '0 0 20px var(--accent-glow)'
+                }}
+              >
+                {loading ? 'Signing in...' : 'Sign In'}
+              </button>
+            </form>
+          ) : (
+            <form onSubmit={handleForgotPassword} style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+              <h3 style={{ fontFamily: 'var(--font-heading)', fontSize: '0.8rem', color: 'var(--text)', marginBottom: 4 }}>Recover Password</h3>
+              <p style={{ fontSize: '0.74rem', color: 'var(--text-dim)', lineHeight: 1.5 }}>
+                Enter your email address and Luma will send password recovery guidance instructions.
+              </p>
+
+              <div>
+                <label style={{ fontFamily: 'var(--font-heading)', fontSize: '0.65rem', fontWeight: 600, letterSpacing: '0.15em', textTransform: 'uppercase', color: 'var(--text-dim)', display: 'block', marginBottom: 8 }}>
+                  Registered Email
+                </label>
+                <input
+                  type="email" value={forgotEmail} onChange={e => setForgotEmail(e.target.value)} required placeholder="you@example.com"
+                  style={{ width: '100%', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '12px 16px', color: 'var(--text)', outline: 'none' }}
+                />
+              </div>
+
+              {error && <div style={{ background: 'rgba(251,113,133,0.08)', border: '1px solid rgba(251,113,133,0.2)', borderRadius: 10, padding: '10px 14px', color: 'var(--rose)', fontSize: '0.78rem' }}>{error}</div>}
+              {success && <div style={{ background: 'rgba(45,212,191,0.08)', border: '1px solid rgba(45,212,191,0.2)', borderRadius: 10, padding: '10px 14px', color: 'var(--teal)', fontSize: '0.78rem' }}>{success}</div>}
+
+              <div style={{ display: 'flex', gap: 10, marginTop: 10 }}>
+                <button
+                  type="submit" disabled={loading}
+                  style={{
+                    flex: 1, background: 'linear-gradient(135deg, var(--accent), var(--accent2))',
+                    border: 'none', borderRadius: 100, padding: '12px', color: '#fff',
+                    fontFamily: 'var(--font-heading)', fontSize: '0.68rem', cursor: 'pointer'
+                  }}
+                >
+                  Send recovery email
+                </button>
+                <button
+                  type="button" onClick={() => { setShowForgot(false); setError(''); setSuccess('') }}
+                  style={{
+                    background: 'none', border: '1px solid var(--border)', borderRadius: 100, padding: '12px 20px',
+                    color: 'var(--text-muted)', fontFamily: 'var(--font-heading)', fontSize: '0.68rem', cursor: 'pointer'
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          )}
 
           {/* Divider */}
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 12,
-            margin: '32px 0',
-            opacity: 0.4,
-          }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '24px 0', opacity: 0.4 }}>
             <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
-            <span style={{
-              fontFamily: 'var(--font-body)',
-              fontSize: '0.75rem',
-              color: 'var(--text-muted)',
-            }}>
-              or
-            </span>
+            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>or</span>
             <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
           </div>
 
-          {/* Sign up link */}
+          {/* Google SSO simulated */}
+          <button
+            onClick={handleGoogleLogin} disabled={loading}
+            style={{
+              width: '100%', padding: '12px 24px', background: 'rgba(255,255,255,0.04)',
+              border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)',
+              color: 'var(--text)', fontFamily: 'var(--font-heading)', fontSize: '0.72rem',
+              fontWeight: 600, letterSpacing: '0.08em', cursor: 'pointer', transition: 'all 0.25s',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, marginBottom: 20
+            }}
+          >
+            <span style={{ fontSize: 16 }}>🌐</span> Continue with Google
+          </button>
+
+          {/* Signup Link */}
           <button
             onClick={() => setActivePage('register')}
             style={{
-              width: '100%',
-              padding: '12px 24px',
-              background: 'transparent',
-              border: '1px solid rgba(167,139,250,0.2)',
-              borderRadius: 'var(--radius-sm)',
-              color: 'var(--accent)',
-              fontFamily: 'var(--font-heading)',
-              fontSize: '0.72rem',
-              fontWeight: 600,
-              letterSpacing: '0.08em',
-              textTransform: 'uppercase',
-              cursor: 'pointer',
-              transition: 'all 0.25s ease',
+              width: '100%', padding: '12px 24px', background: 'transparent',
+              border: '1px solid rgba(167,139,250,0.2)', borderRadius: 'var(--radius-sm)',
+              color: 'var(--accent)', fontFamily: 'var(--font-heading)', fontSize: '0.72rem',
+              fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', cursor: 'pointer', transition: 'all 0.25s'
             }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = 'rgba(167,139,250,0.08)'
-              e.currentTarget.style.borderColor = 'rgba(167,139,250,0.3)'
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = 'transparent'
-              e.currentTarget.style.borderColor = 'rgba(167,139,250,0.2)'
-            }}
+            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(167,139,250,0.05)' }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
           >
             Create Account
           </button>
+
         </div>
 
-        {/* Back to home */}
         <button
           onClick={() => setActivePage('home')}
-          style={{
-            marginTop: 24,
-            background: 'none',
-            border: 'none',
-            color: 'var(--text-muted)',
-            fontFamily: 'var(--font-body)',
-            fontSize: '0.85rem',
-            cursor: 'pointer',
-            transition: 'color 0.25s ease',
-          }}
-          onMouseEnter={(e) => e.target.style.color = 'var(--text)'}
-          onMouseLeave={(e) => e.target.style.color = 'var(--text-muted)'}
+          style={{ marginTop: 24, background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '0.8rem', cursor: 'pointer' }}
+          onMouseEnter={e => e.target.style.color = 'var(--text)'}
+          onMouseLeave={e => e.target.style.color = 'var(--text-muted)'}
         >
           ← Back to Home
         </button>
+
       </div>
     </section>
   )
